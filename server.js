@@ -1,24 +1,27 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-
-// Paket türünü otomatik tespit eden güvenli içe aktarma
-const BotModule = require('node-telegram-bot-api');
-const TelegramBot = typeof BotModule === 'function' ? BotModule : (BotModule.default || BotModule.TelegramBot);
+const nodemailer = require('nodemailer');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Telegram Bot Kurulumu
-const token = process.env.TELEGRAM_BOT_TOKEN;
-let bot;
+app.use(express.static('public'));
 
-if (token) {
-  bot = new TelegramBot(token, { polling: true });
-} else {
-  console.error("TELEGRAM_BOT_TOKEN tanimsiz!");
-}
+const users = {}; 
+const otpStore = {}; 
+const messageHistory = []; 
+const pigeonState = {}; 
+
+// Nodemailer Gönderici Yapılandırması (Render Environment değişkenlerini okur)
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -34,41 +37,49 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 io.on('connection', (socket) => {
 
-  // Siteden kod istendiğinde Telegram'a doğrulama kodu atar
-  socket.on('request otp', (phoneNumber) => {
+  // Siteden e-posta ile kod istendiğinde mail atar
+  socket.on('request otp', (email) => {
     const code = Math.floor(1000 + Math.random() * 9000).toString();
-    otpStore[phoneNumber] = code;
+    otpStore[email] = code;
 
-    bot.sendMessage(phoneNumber, `🔑 Güvercin Messenger doğrulama kodun: ${code}`)
-      .then(() => {
-        socket.emit('otp sent', { success: true });
-      })
-      .catch((err) => {
-        console.error('Telegram Gönderme Hatası:', err);
+    const mailOptions = {
+      from: `"Güvercin Messenger" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: '🔑 Güvercin Messenger Doğrulama Kodu',
+      text: `Güvercin Messenger giriş kodun: ${code}`
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Mail Gönderme Hatası:', error);
         socket.emit('pigeon error', { 
-          message: 'Kod gönderilemedi! Önce Telegram botunu başlattığınızdan (/start) emin olun.' 
+          message: 'Kod gönderilemedi! Lütfen e-posta adresinizi ve sunucu ayarlarını kontrol edin.' 
         });
-      });
+      } else {
+        socket.emit('otp sent', { success: true });
+      }
+    });
   });
 
-  socket.on('verify otp', ({ phoneNumber, code }) => {
-    if (otpStore[phoneNumber] && otpStore[phoneNumber] === code) {
-      delete otpStore[phoneNumber];
-      users[phoneNumber] = socket.id;
-      socket.phoneNumber = phoneNumber;
-      if (!pigeonState[phoneNumber]) pigeonState[phoneNumber] = 'home';
+  // Kod Doğrulama
+  socket.on('verify otp', ({ email, code }) => {
+    if (otpStore[email] && otpStore[email] === code) {
+      delete otpStore[email];
+      users[email] = socket.id;
+      socket.email = email;
+      if (!pigeonState[email]) pigeonState[email] = 'home';
 
       const userHistory = messageHistory.filter(
-        m => m.senderPhone === phoneNumber || m.receiverPhone === phoneNumber
+        m => m.senderPhone === email || m.receiverPhone === email
       );
 
-      socket.emit('login success', { phoneNumber, history: userHistory, pigeonState: pigeonState[phoneNumber] });
+      socket.emit('login success', { phoneNumber: email, history: userHistory, pigeonState: pigeonState[email] });
     } else {
       socket.emit('login failed', { message: 'Hatalı doğrulama kodu!' });
     }
   });
 
-  // Güvercin Gönderme (Tek Yön Uçuş)
+  // Güvercin Gönderme
   socket.on('send pigeon', (data) => {
     const { senderPhone, receiverPhone, senderLat, senderLng, receiverLat, receiverLng, message } = data;
 
@@ -94,7 +105,6 @@ io.on('connection', (socket) => {
 
     messageHistory.push(newMsg);
 
-    // Uçuş başladı
     socket.emit('pigeon status', {
       receiverPhone,
       distance: newMsg.distance,
@@ -102,7 +112,6 @@ io.on('connection', (socket) => {
       messageData: newMsg
     });
 
-    // Teslimat gerçekleştiğinde güvercin anında hazır duruma gelir
     setTimeout(() => {
       newMsg.status = 'teslim edildi';
       pigeonState[senderPhone] = 'home';
@@ -120,8 +129,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (socket.phoneNumber) {
-      delete users[socket.phoneNumber];
+    if (socket.email) {
+      delete users[socket.email];
     }
   });
 });
