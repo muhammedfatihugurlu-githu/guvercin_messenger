@@ -2,8 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const TelegramBotPackage = require('node-telegram-bot-api');
-
-// ESM ve CommonJS paket uyumluluğu kontrolü
 const TelegramBot = TelegramBotPackage.default || TelegramBotPackage;
 
 const app = express();
