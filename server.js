@@ -1,8 +1,10 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const TelegramBotPackage = require('node-telegram-bot-api');
-const TelegramBot = TelegramBotPackage.default || TelegramBotPackage;
+
+// Paket türünü otomatik tespit eden güvenli içe aktarma
+const BotModule = require('node-telegram-bot-api');
+const TelegramBot = typeof BotModule === 'function' ? BotModule : (BotModule.default || BotModule.TelegramBot);
 
 const app = express();
 const server = http.createServer(app);
@@ -15,14 +17,8 @@ let bot;
 if (token) {
   bot = new TelegramBot(token, { polling: true });
 } else {
-  console.error("CRITICAL HATA: TELEGRAM_BOT_TOKEN Render panelinde bulunamadı!");
+  console.error("TELEGRAM_BOT_TOKEN tanimsiz!");
 }
-
-// Kullanıcı Telegram bota /start yazdığında çalışır
-bot.onText(/\/start/, (msg) => {
-  const chatId = msg.chat.id;
-  bot.sendMessage(chatId, `🕊️ Güvercin Messenger'a Hoş Geldin!\n\nTelegram ID'niz: ${chatId}\n\nBu ID'yi sitedeki doğrulama alanına yazabilirsiniz.`);
-});
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
