@@ -1,22 +1,24 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const TelegramBot = require('node-telegram-bot-api');
+const TelegramBotPackage = require('node-telegram-bot-api');
+
+// ESM ve CommonJS paket uyumluluğu kontrolü
+const TelegramBot = TelegramBotPackage.default || TelegramBotPackage;
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// Telegram Bot Kurulumu (Token Render Environment'tan çekilir)
+// Telegram Bot Kurulumu
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const bot = new TelegramBot(token, { polling: true });
+let bot;
 
-app.use(express.static('public'));
-
-const users = {}; 
-const otpStore = {}; 
-const messageHistory = []; 
-const pigeonState = {}; // { 'telegramId': 'home' veya 'busy' }
+if (token) {
+  bot = new TelegramBot(token, { polling: true });
+} else {
+  console.error("CRITICAL HATA: TELEGRAM_BOT_TOKEN Render panelinde bulunamadı!");
+}
 
 // Kullanıcı Telegram bota /start yazdığında çalışır
 bot.onText(/\/start/, (msg) => {
