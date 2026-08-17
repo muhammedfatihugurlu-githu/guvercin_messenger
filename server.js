@@ -1,17 +1,28 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const TelegramBot = require('node-telegram-bot-api');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Telegram Bot Kurulumu (Token Render Environment'tan çekilir)
+const token = process.env.TELEGRAM_BOT_TOKEN;
+const bot = new TelegramBot(token, { polling: true });
 
 app.use(express.static('public'));
 
 const users = {}; 
 const otpStore = {}; 
 const messageHistory = []; 
-const pigeonState = {}; // { '05551112233': 'home' veya 'busy' }
+const pigeonState = {}; // { 'telegramId': 'home' veya 'busy' }
+
+// Kullanıcı Telegram bota /start yazdığında çalışır
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, `🕊️ Güvercin Messenger'a Hoş Geldin!\n\nTelegram ID'niz: ${chatId}\n\nBu ID'yi sitedeki doğrulama alanına yazabilirsiniz.`);
+});
 
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -27,11 +38,21 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
 
 io.on('connection', (socket) => {
 
+  // Siteden kod istendiğinde Telegram'a doğrulama kodu atar
   socket.on('request otp', (phoneNumber) => {
     const code = Math.floor(1000 + Math.random() * 9000).toString();
     otpStore[phoneNumber] = code;
-    console.log(`\n📲 [SMS SERVİSİ] ${phoneNumber} kod: ${code}\n`);
-    socket.emit('otp sent', { success: true });
+
+    bot.sendMessage(phoneNumber, `🔑 Güvercin Messenger doğrulama kodun: ${code}`)
+      .then(() => {
+        socket.emit('otp sent', { success: true });
+      })
+      .catch((err) => {
+        console.error('Telegram Gönderme Hatası:', err);
+        socket.emit('pigeon error', { 
+          message: 'Kod gönderilemedi! Önce Telegram botunu başlattığınızdan (/start) emin olun.' 
+        });
+      });
   });
 
   socket.on('verify otp', ({ phoneNumber, code }) => {
@@ -109,6 +130,7 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(3000, () => {
-  console.log('Güvercin Sunucusu Hazır: http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Güvercin Sunucusu Hazır: http://localhost:${PORT}`);
 });
